@@ -15,6 +15,7 @@ type Station = {
   grav3: number | null;
   mag1: number | null;
   mag2: number | null;
+  mag3: number | null;
 };
 
 /* =========================
@@ -24,23 +25,32 @@ function EditableCell({
   value,
   onSave,
   type = "number",
+  disabled = false,
 }: {
   value: string | number | null;
   onSave: (v: string) => void;
   type?: "text" | "number";
+  disabled?: boolean;
 }) {
   const [v, setV] = useState(value?.toString() ?? "");
+
+  useEffect(() => {
+    setV(value?.toString() ?? "");
+  }, [value]);
 
   return (
     <input
       value={v}
+      disabled={disabled}
       onChange={(e) => setV(e.target.value)}
-      onBlur={() => onSave(v)}
+      onBlur={() => !disabled && onSave(v)}
       type={type}
-      className="
-        bg-transparent w-full outline-none
-        focus:bg-neutral-800 px-1 rounded
-      "
+      className={`
+        w-full px-2 py-1 rounded outline-none
+        ${disabled
+          ? "bg-transparent text-neutral-400"
+          : "bg-neutral-800 focus:bg-neutral-700"}
+      `}
     />
   );
 }
@@ -49,6 +59,7 @@ export default function StationsList({ refreshKey }: { refreshKey: number }) {
   const supabase = createClient();
   const [stations, setStations] = useState<Station[]>([]);
   const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     load();
@@ -74,6 +85,17 @@ export default function StationsList({ refreshKey }: { refreshKey: number }) {
       .from("field_stations")
       .update({ [field]: value === "" ? null : value })
       .eq("id", id);
+  }
+
+  /* =========================
+     🗑️ DELETE FILA
+  ========================= */
+  async function deleteStation(id: string) {
+    const ok = confirm("¿Eliminar esta estación?");
+    if (!ok) return;
+
+    await supabase.from("field_stations").delete().eq("id", id);
+    load();
   }
 
   /* =========================
@@ -118,6 +140,7 @@ export default function StationsList({ refreshKey }: { refreshKey: number }) {
         "measured_at",
         "mag1",
         "mag2",
+        "mag3",
       ];
 
       rows = stations.map((s) => [
@@ -128,6 +151,7 @@ export default function StationsList({ refreshKey }: { refreshKey: number }) {
         s.measured_at,
         s.mag1 ?? "",
         s.mag2 ?? "",
+        s.mag3 ?? "",
       ]);
     }
 
@@ -151,9 +175,7 @@ export default function StationsList({ refreshKey }: { refreshKey: number }) {
     <div className="mt-6 space-y-3">
       {/* HEADER */}
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold">
-          Estaciones ({stations.length})
-        </h3>
+        <h3 className="font-semibold">Estaciones ({stations.length})</h3>
 
         <div className="flex gap-2">
           <button
@@ -172,21 +194,23 @@ export default function StationsList({ refreshKey }: { refreshKey: number }) {
         </div>
       </div>
 
-      {/* TABLA */}
-      <div className="overflow-auto max-h-[60vh] border border-neutral-800 rounded-lg">
-        <table className="w-full text-xs border-collapse">
-          <thead className="bg-neutral-900 sticky top-0">
+      {/* TABLA CON SCROLL */}
+      <div className="overflow-x-auto overflow-y-auto max-h-[60vh] border border-neutral-800 rounded-lg">
+        <table className="min-w-275 text-sm border-collapse w-full">
+          <thead className="bg-neutral-900 sticky top-0 z-10">
             <tr>
-              <th className="px-2 py-2 text-left">Est</th>
-              <th className="px-2 py-2 text-left">Lat</th>
-              <th className="px-2 py-2 text-left">Lon</th>
-              <th className="px-2 py-2 text-left">Cota</th>
-              <th className="px-2 py-2 text-left">Hora</th>
-              <th className="px-2 py-2 text-left">G1</th>
-              <th className="px-2 py-2 text-left">G2</th>
-              <th className="px-2 py-2 text-left">G3</th>
-              <th className="px-2 py-2 text-left">M1</th>
-              <th className="px-2 py-2 text-left">M2</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">Est</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">Lat</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">Lon</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">Cota</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">Hora</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">G1</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">G2</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">G3</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">M1</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">M2</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">M3</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">Acciones</th>
             </tr>
           </thead>
 
@@ -196,71 +220,113 @@ export default function StationsList({ refreshKey }: { refreshKey: number }) {
                 key={s.id}
                 className="border-t border-neutral-800 hover:bg-neutral-900/50"
               >
-                {/* Estación editable */}
-                <td className="px-2 py-1">
+                <td className="px-3 py-2 min-w-20">
                   <EditableCell
                     value={s.station}
                     type="text"
+                    disabled={editingId !== s.id}
                     onSave={(v) => updateField(s.id, "station", v)}
                   />
                 </td>
 
-                {/* Coordenadas (solo lectura) */}
-                <td className="px-2 py-1">{s.latitude.toFixed(5)}</td>
-                <td className="px-2 py-1">{s.longitude.toFixed(5)}</td>
+                <td className="px-3 py-2 whitespace-nowrap min-w-27.5">
+                  {s.latitude.toFixed(5)}
+                </td>
+                <td className="px-3 py-2 whitespace-nowrap min-w-27.5">
+                  {s.longitude.toFixed(5)}
+                </td>
 
-                {/* Cota editable */}
-                <td className="px-2 py-1">
+                <td className="px-3 py-2 min-w-22.5">
                   <EditableCell
                     value={s.elevation}
+                    disabled={editingId !== s.id}
                     onSave={(v) => updateField(s.id, "elevation", v)}
                   />
                 </td>
 
-                {/* Hora */}
-                <td className="px-2 py-1">
-                  {new Date(s.measured_at).toLocaleTimeString()}
+                <td className="px-3 py-2 whitespace-nowrap min-w-20">
+                  {new Date(s.measured_at).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </td>
 
-                {/* Grav editable */}
-                <td className="px-2 py-1">
+                <td className="px-3 py-2 min-w-20">
                   <EditableCell
                     value={s.grav1}
+                    disabled={editingId !== s.id}
                     onSave={(v) => updateField(s.id, "grav1", v)}
                   />
                 </td>
-                <td className="px-2 py-1">
+                <td className="px-3 py-2 min-w-20">
                   <EditableCell
                     value={s.grav2}
+                    disabled={editingId !== s.id}
                     onSave={(v) => updateField(s.id, "grav2", v)}
                   />
                 </td>
-                <td className="px-2 py-1">
+                <td className="px-3 py-2 min-w-20">
                   <EditableCell
                     value={s.grav3}
+                    disabled={editingId !== s.id}
                     onSave={(v) => updateField(s.id, "grav3", v)}
                   />
                 </td>
 
-                {/* Mag editable */}
-                <td className="px-2 py-1">
+                <td className="px-3 py-2 min-w-20">
                   <EditableCell
                     value={s.mag1}
+                    disabled={editingId !== s.id}
                     onSave={(v) => updateField(s.id, "mag1", v)}
                   />
                 </td>
-                <td className="px-2 py-1">
+                <td className="px-3 py-2 min-w-20">
                   <EditableCell
                     value={s.mag2}
+                    disabled={editingId !== s.id}
                     onSave={(v) => updateField(s.id, "mag2", v)}
                   />
+                </td>
+                <td className="px-3 py-2 min-w-20">
+                  <EditableCell
+                    value={s.mag3}
+                    disabled={editingId !== s.id}
+                    onSave={(v) => updateField(s.id, "mag3", v)}
+                  />
+                </td>
+
+                <td className="px-3 py-2 min-w-30">
+                  <div className="flex gap-2">
+                    {editingId === s.id ? (
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="px-2 py-1 text-xs rounded bg-green-600 hover:bg-green-500"
+                      >
+                        Guardar
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setEditingId(s.id)}
+                        className="px-2 py-1 text-xs rounded bg-blue-600 hover:bg-blue-500"
+                      >
+                        Editar
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => deleteStation(s.id)}
+                      className="px-2 py-1 text-xs rounded bg-red-600 hover:bg-red-500"
+                    >
+                      Borrar
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
 
             {loading && (
               <tr>
-                <td colSpan={10} className="text-center py-4 opacity-60">
+                <td colSpan={12} className="text-center py-4 opacity-60">
                   Cargando...
                 </td>
               </tr>
