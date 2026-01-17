@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Test WMM</title>
+</head>
+<body>
+  <h1>Probando WMM</h1>
+  <pre id="out">Cargando...</pre>
+
+  <script type="module">
+    import createWMM from "./wmm.js";
+
+    const Module = await createWMM();
+
+    const wmm_compute = Module.cwrap(
+      "wmm_compute",
+      "number",
+      ["number", "number", "number", "number"]
+    );
+
+    // DATOS DE TU IMAGEN / NOAA
+    const lat = -34.6037;
+    const lon = -58.3816;
+    const height = 25;        // metros
+    const decimalYear = 2024.0;
+
+    const F = wmm_compute(lat, lon, height, decimalYear);
+
+    document.getElementById("out").textContent =
+      `Campo total F = ${F.toFixed(1)} nT`;
+  </script>
+</body>
+</html>

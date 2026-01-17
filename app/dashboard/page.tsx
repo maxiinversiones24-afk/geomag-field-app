@@ -1,67 +1,71 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { createClient } from "@/utils/supabase/client";
+
+type Campaign = {
+  id: string;
+  name: string;
+  description: string | null;
+};
 
 export default function Dashboard() {
+  const supabase = createClient();
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+
+  useEffect(() => {
+    loadCampaigns();
+  }, []);
+
+  async function loadCampaigns() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    const { data } = await supabase
+      .from("campaigns")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (data) setCampaigns(data);
+  }
+
   return (
-    <main className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-lg bg-neutral-900/80 backdrop-blur border border-neutral-800 rounded-2xl p-8 shadow-xl">
+    <main className="min-h-screen px-4 py-10 max-w-3xl mx-auto space-y-6">
+      <h1 className="text-2xl font-bold">Campañas</h1>
 
-        {/* Título */}
-        <h1 className="text-2xl font-bold text-center mb-2">
-          GeoMag Field
-        </h1>
+      <Link
+        href="/dashboard/campaign/new"
+        className="block p-4 rounded-xl bg-blue-600 hover:bg-blue-500 font-semibold text-center"
+      >
+        ➕ Crear campaña
+      </Link>
 
-        {/* Subtítulo */}
-        <p className="text-sm text-neutral-400 text-center mb-8">
-          Registro y análisis de datos geofísicos en campo
-        </p>
-
-        {/* Acciones */}
-        <div className="grid grid-cols-1 gap-4">
-
+      <div className="space-y-3">
+        {campaigns.map((c) => (
           <Link
-            href="/dashboard/field"
-            className="
-              group flex items-center justify-between
-              p-5 rounded-xl
-              bg-neutral-800 hover:bg-blue-600/20
-              border border-neutral-700 hover:border-blue-500
-              transition
-            "
+            key={c.id}
+            href={`/dashboard/campaign/${c.id}`}
+            className="block p-4 rounded-xl bg-neutral-800 hover:bg-neutral-700 border border-neutral-700"
           >
-            <div>
-              <div className="text-lg font-semibold">📍 Cargar datos</div>
-              <div className="text-sm text-neutral-400 group-hover:text-blue-300">
-                Registrar estaciones de campo
+            <div className="font-semibold">{c.name}</div>
+            {c.description && (
+              <div className="text-sm text-neutral-400">
+                {c.description}
               </div>
-            </div>
-            <span className="text-xl group-hover:translate-x-1 transition">→</span>
+            )}
           </Link>
+        ))}
 
-          <Link
-            href="/dashboard/magnetic"
-            className="
-              group flex items-center justify-between
-              p-5 rounded-xl
-              bg-neutral-800 hover:bg-green-600/20
-              border border-neutral-700 hover:border-green-500
-              transition
-            "
-          >
-            <div>
-              <div className="text-lg font-semibold">🧲 Procesar magnetismo</div>
-              <div className="text-sm text-neutral-400 group-hover:text-green-300">
-                Calcular y analizar campo magnético
-              </div>
-            </div>
-            <span className="text-xl group-hover:translate-x-1 transition">→</span>
-          </Link>
-
-        </div>
-
-        {/* Footer mini */}
-        <p className="text-xs text-neutral-500 text-center mt-8">
-          Diseñado para trabajo de campo · Mobile first
-        </p>
+        {campaigns.length === 0 && (
+          <p className="text-neutral-500 text-sm">
+            Todavía no creaste campañas.
+          </p>
+        )}
       </div>
     </main>
   );

@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { createClient } from "@/utils/supabase/client";
+import Link from "next/link";
+
 
 /* ===============================
    CONVERSIÓN DMS → DECIMAL
@@ -29,16 +31,26 @@ function dmsToDecimal(input: string): number | null {
   return null;
 }
 
-export default function FieldStationForm({ onSaved }: { onSaved: () => void }) {
+export default function FieldStationForm({
+  campaignId,
+  onSaved,
+}: {
+  campaignId: string;
+  onSaved?: () => void;
+}) {
+
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
 
   const [form, setForm] = useState({
     station: "",
     latitude: "",
+    latHem: "S",   // S o N
     longitude: "",
+    lonHem: "W",   // W = Oeste (O)
     elevation: "",
-    measured_at: "",
+    measurement_date: "",
+    measurement_time: "",
     grav1: "",
     grav2: "",
     grav3: "",
@@ -47,7 +59,10 @@ export default function FieldStationForm({ onSaved }: { onSaved: () => void }) {
     mag3: "",
   });
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleChange(
+  e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) {
+
     setForm({ ...form, [e.target.name]: e.target.value });
   }
 
@@ -66,40 +81,57 @@ export default function FieldStationForm({ onSaved }: { onSaved: () => void }) {
     }
 
     // ✅ CONVERTIR COORDENADAS (decimal o DMS)
-    const lat = dmsToDecimal(form.latitude);
-    const lon = dmsToDecimal(form.longitude);
+    let lat = dmsToDecimal(form.latitude);
+let lon = dmsToDecimal(form.longitude);
 
-    if (lat === null || lon === null) {
-      alert("Coordenadas inválidas. Usá decimal o grados minutos segundos.");
-      setLoading(false);
-      return;
-    }
+if (lat === null || lon === null) {
+  alert("Coordenadas inválidas. Usá decimal o grados minutos segundos.");
+  setLoading(false);
+  return;
+}
+
+// 🔴 CAMBIO 4 — aplicar hemisferio
+lat = form.latHem === "S" ? -Math.abs(lat) : Math.abs(lat);
+lon = form.lonHem === "W" ? -Math.abs(lon) : Math.abs(lon);
+
 
     // ✅ ARMAR FECHA + HORA (hoy + hora ingresada)
-    const now = new Date();
-    const [hh, mm] = form.measured_at.split(":");
-
     const measuredAt = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      Number(hh),
-      Number(mm)
-    );
+  `${form.measurement_date}T${form.measurement_time}:00Z`
+);
+
+  
+    const mags = [form.mag1, form.mag2, form.mag3]
+      .map((v) => (v ? Number(v) : null))
+      .filter((v): v is number => v !== null);
+
+    const magAvg =
+      mags.length > 0 ? mags.reduce((a, b) => a + b, 0) / mags.length : null;
 
     const { error } = await supabase.from("field_stations").insert({
+      campaign_id: campaignId,
+
       user_id: user.id,
       station: form.station || null,
       latitude: lat,
       longitude: lon,
       elevation: form.elevation ? Number(form.elevation) : null,
+
+      measurement_date: form.measurement_date,
+      measurement_time: form.measurement_time,
       measured_at: measuredAt.toISOString(),
+
       grav1: form.grav1 ? Number(form.grav1) : null,
       grav2: form.grav2 ? Number(form.grav2) : null,
       grav3: form.grav3 ? Number(form.grav3) : null,
+
       mag1: form.mag1 ? Number(form.mag1) : null,
       mag2: form.mag2 ? Number(form.mag2) : null,
       mag3: form.mag3 ? Number(form.mag3) : null,
+
+      mag_avg: magAvg,       // ✅ NUEVO
+      igrf_total: null,      // se calculará después
+      mag_corr: null,        // se calculará después
     });
 
     if (error) {
@@ -109,9 +141,12 @@ export default function FieldStationForm({ onSaved }: { onSaved: () => void }) {
       setForm({
         station: "",
         latitude: "",
+        latHem: "S",      // 🔴 FIX
         longitude: "",
+        lonHem: "W",      // 🔴 FIX
         elevation: "",
-        measured_at: "",
+        measurement_date: "",
+        measurement_time: "",
         grav1: "",
         grav2: "",
         grav3: "",
@@ -119,7 +154,9 @@ export default function FieldStationForm({ onSaved }: { onSaved: () => void }) {
         mag2: "",
         mag3: "",
       });
-      onSaved();
+
+      onSaved?.();
+
     }
 
     setLoading(false);
@@ -129,13 +166,28 @@ export default function FieldStationForm({ onSaved }: { onSaved: () => void }) {
     <form
       onSubmit={handleSubmit}
       className="
-        max-w-xl mx-auto
+        w-full md:max-w-xl md:mx-auto
+
         bg-neutral-900/80 backdrop-blur
         border border-neutral-800
         rounded-2xl p-6
         space-y-6
       "
     >
+
+      <Link
+        href="/dashboard"
+        className="
+          inline-flex items-center gap-2
+          text-sm font-medium
+          text-blue-400
+          hover:text-blue-300
+          active:opacity-70
+        "
+      >
+        ← Volver a campañas
+      </Link>
+
       <div>
         <h2 className="text-lg font-semibold">Nueva estación</h2>
         <p className="text-sm text-neutral-400">
@@ -153,7 +205,10 @@ export default function FieldStationForm({ onSaved }: { onSaved: () => void }) {
       />
 
       {/* Coordenadas */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3">
+
+      {/* LATITUD */}
+      <div className="flex gap-2">
         <input
           name="latitude"
           placeholder="Lat (decimal o DMS)"
@@ -161,9 +216,21 @@ export default function FieldStationForm({ onSaved }: { onSaved: () => void }) {
           onChange={handleChange}
           required
           inputMode="decimal"
-          className="p-2.5 rounded-lg bg-neutral-800 border border-neutral-700 focus:border-blue-500 outline-none"
+          className="flex-1 p-2.5 rounded-lg bg-neutral-800 border border-neutral-700 focus:border-blue-500 outline-none"
         />
+        <select
+          name="latHem"
+          value={form.latHem}
+          onChange={handleChange}
+          className="p-2.5 rounded-lg bg-neutral-800 border border-neutral-700"
+        >
+          <option value="N">N</option>
+          <option value="S">S</option>
+        </select>
+      </div>
 
+      {/* LONGITUD */}
+      <div className="flex gap-2">
         <input
           name="longitude"
           placeholder="Lon (decimal o DMS)"
@@ -171,13 +238,23 @@ export default function FieldStationForm({ onSaved }: { onSaved: () => void }) {
           onChange={handleChange}
           required
           inputMode="decimal"
-          className="p-2.5 rounded-lg bg-neutral-800 border border-neutral-700 focus:border-blue-500 outline-none"
+          className="flex-1 p-2.5 rounded-lg bg-neutral-800 border border-neutral-700 focus:border-blue-500 outline-none"
         />
-
+        <select
+          name="lonHem"
+          value={form.lonHem}
+          onChange={handleChange}
+          className="p-2.5 rounded-lg bg-neutral-800 border border-neutral-700"
+        >
+          <option value="E">E</option>
+          <option value="W">O</option>
+        </select>
       </div>
+    </div>
+
 
       <p className="text-xs text-neutral-500">
-        Formatos válidos: -38.1234 -- 38°12'20" -- 38 12 20
+        Formatos válidos: 38.1234 -- 38°12'20" -- 38 12 20
       </p>
 
       {/* Elevación */}
@@ -192,17 +269,31 @@ export default function FieldStationForm({ onSaved }: { onSaved: () => void }) {
         className="w-full p-2.5 rounded-lg bg-neutral-800 border border-neutral-700 focus:border-blue-500 outline-none"
       />
 
-      {/* Hora */}
-      <div className="space-y-1">
-        <label className="text-xs text-neutral-400">Hora de medición</label>
-        <input
-          type="time"
-          name="measured_at"
-          value={form.measured_at}
-          onChange={handleChange}
-          required
-          className="w-full p-2.5 rounded-lg bg-neutral-800 border border-neutral-700 focus:border-blue-500 outline-none"
-        />
+      {/* Fecha y hora */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <label className="text-xs text-neutral-400">Fecha</label>
+          <input
+            type="date"
+            name="measurement_date"
+            value={form.measurement_date}
+            onChange={handleChange}
+            required
+            className="w-full p-2.5 rounded-lg bg-neutral-800 border border-neutral-700 focus:border-blue-500 outline-none"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-xs text-neutral-400">Hora</label>
+          <input
+            type="time"
+            name="measurement_time"
+            value={form.measurement_time}
+            onChange={handleChange}
+            required
+            className="w-full p-2.5 rounded-lg bg-neutral-800 border border-neutral-700 focus:border-blue-500 outline-none"
+          />
+        </div>
       </div>
 
       {/* Gravimetría */}
